@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Outdoor GPS Tracking</title>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+
+  <style>
+    body, html {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    .layout {
+      display: flex;
+      height: 100vh;
+    }
+
+    .sidebar {
+      width: 220px;
+      background-color: #fff;
+      border-right: 1px solid #ddd;
+      padding: 20px 15px;
+      box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+    }
+
+    .sidebar h2 {
+      font-size: 30px;
+      font-weight: bold;
+      margin: 0 0 30px;
+    }
+
+    .sidebar h3 {
+      font-size: 25px;
+      font-weight: bold;
+      margin: 25px 0 8px;
+    }
+
+    .sidebar a {
+      display: block;
+      font-size: 25px;
+      color: #007BFF;
+      text-decoration: none;
+      padding: 5px 0;
+      transition: color 0.2s ease-in-out;
+    }
+
+    .sidebar a:hover {
+      color: #0056b3;
+    }
+
+    .content {
+      flex: 1;
+      overflow: auto;
+      padding: 25px;
+      background: linear-gradient(to bottom right, #e0e0e0, #cfcfcf);
+    }
+
+    h1 {
+      text-align: center;
+      font-size: 22px;
+      margin-top: 10px;
+      color: #333;
+    }
+
+    .legend {
+      background: white;
+      padding: 10px;
+      border-radius: 5px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.5);
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 1000;
+    }
+
+    .legend div {
+      display: flex;
+      align-items: center;
+      margin-bottom: 5px;
+    }
+
+    .legend div div {
+      width: 15px;
+      height: 15px;
+      margin-right: 5px;
+    }
+
+    .latest {
+      background: hsl(208, 83%, 43%);
+      border-radius: 50%;
+    }
+
+    .previous {
+      background: grey;
+      border-radius: 50%;
+    }
+
+    .sos {
+      background: red;
+      border-radius: 50%;
+    }
+
+    #map {
+      height: 70vh;
+      width: 100%;
+      border: 2px solid #555;
+      border-radius: 10px;
+      box-shadow: 0 0 12px rgba(0,0,0,0.15);
+    }
+
+    .unit-label {
+      position: absolute;
+      bottom: 60px;
+      left: 5px;
+      background: rgba(255, 255, 255, 0.9);
+      padding: 6px 12px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      font-size: 13px;
+      color: #333;
+    }
+
+    .container {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 20px;
+      padding: 20px;
+    }
+
+    .card {
+      background: white;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+
+    .card h2 {
+      font-size: 18px;
+      margin-bottom: 10px;
+    }
+
+    .value {
+      font-weight: bold;
+      font-size: 16px;
+    }
+
+    #sos-info {
+      background: #f8d7da;
+      padding: 10px;
+      margin: 10px 20px;
+      border-radius: 6px;
+      display: none;
+    }
+
+    #previous-sos-alerts {
+      margin: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <div class="sidebar">
+      <h2>Wheelchair Locations</h2>
+
+      <h3>Wheelchair 1</h3>
+      <a href="/indoor">Indoor</a>
+      <a href="/outdoor">Outdoor</a>
+
+      <h3>Wheelchair 2</h3>
+      <a href="/indoor_location2">Indoor</a>
+      <a href="/outdoor_location2">Outdoor</a>
+    </div>
+
+    <div class="content">
+      <h1>Outdoor GPS Tracking</h1>
+
+      <div class="legend">
+        <div><div class="latest"></div>Latest Location</div>
+        <div><div class="previous"></div>Previous Location</div>
+        <div>
+          <div class="sos"></div><strong>SOS Alert Location</strong>
+          <button id="cancel-sos" style="margin-left: 10px;">Acknowledge</button>
+        </div>
+      </div>
+
+      <div id="map"></div>
+
+      <div class="container">
+        <div class="card"><h2>Fall Detection</h2><p class="value" id="fall">Loading...</p></div>
+        <div class="card"><h2>Slope Status</h2><p class="value" id="slope">Loading...</p></div>
+        <div class="card"><h2>Collision</h2><p class="value" id="collision">Loading...</p></div>
+        <div class="card"><h2>Encoder</h2><p class="value" id="encoder">Loading...</p></div>
+        <div class="card" id="sos-card" style="display: none;"><h2>Previous SOS</h2><p class="value" id="previous-sos-alerts"></p></div>
+      </div>
+
+      <div id="sos-info"></div>
+      <div id="previous-sos-alerts"></div>
+
+      <script>
+        var sosMarker = null;
+        var sosLat, sosLng, sosTimestamp, sosLocationNameEn;
+  
+      const map = L.map('map').setView([0, 0], 2);
+  
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(map);
+  
+      function fetchSlopeData() {
+        axios.get('http://localhost/wheelchair_tracking/fetchlocation/wh1_get_slope.php')
+              .then(function(response) {
+                  var slopeData = response.data;
+                  var slopeInfoDiv = document.getElementById('slope');
+  
+                  if (slopeData) {
+                      var slopeTimestamp = new Date(slopeData.timestamp).getTime();
+                      var currentTime = Date.now();
+  
+                      if (currentTime - slopeTimestamp <= 60 * 1000) {
+                          slopeInfoDiv.innerHTML = 'Slope detection state: ' + slopeData.slope_detection;
+                      } else {
+                          slopeInfoDiv.innerHTML = 'No slope detection movement within the last minute.';
+                      }
+                  } else {
+                      slopeInfoDiv.innerHTML = 'No slope detection data available.';
+                  }
+              })
+              .catch(function(error) {
+                  console.error('Error fetching slope detection data:', error);
+                  document.getElementById('slope').innerHTML = 'Error fetching slope detection data.';
+              });
+      }
+  
+      function fetchPreviousGPS() {
+        axios.get('http://localhost/wheelchair_tracking/fetchlocation/wh1_get_2nd_recent_location.php')
+              .then(function(response) {
+                  var previousLocation = response.data;
+  
+                  if (previousLocation) {
+                      var prevLat = parseFloat(previousLocation.latitude);
+                      var prevLng = parseFloat(previousLocation.longitude);
+  
+                      axios.get(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${prevLat}&lon=${prevLng}&accept-language=en,zh`)
+                          .then(function(geoResponse) {
+                              var prevLocationNameEn = geoResponse.data.display_name;
+  
+                              var dropShape = L.divIcon({
+                                  className: 'drop-icon',
+                                  html: '<svg width="20" height="25" xmlns="http://www.w3.org/2000/svg"><path d="M10 0C15 0 20 5 20 10C20 18 10 25 10 25C10 25 0 18 0 10C0 5 5 0 10 0Z" fill="grey"/></svg>',
+                                  iconSize: [20, 25],
+                                  iconAnchor: [10, 25]
+                              });
+  
+                              L.marker([prevLat, prevLng], { icon: dropShape }).addTo(map)
+                                  .bindPopup('Previous Position: ' + prevLat + '°N, ' + prevLng + '°E<br>Timestamp: ' + previousLocation.timestamp + '<br>Location: ' + prevLocationNameEn);
+                          })
+                          .catch(function(geoError) {
+                              console.error('Error fetching previous location name:', geoError);
+                          });
+                  } else {
+                      console.error('No previous data found');
+                  }
+              })
+              .catch(function(error) {
+                  console.error('Error fetching previous location from PHP script:', error);
+              });
+      }
+  
+      function fetchLatestLocation() {
+              return axios.get('http://localhost/wheelchair_tracking/fetchlocation/wh1_get_locations.php')
+                  .then(function(response) {
+                      var latestLocation = response.data;
+  
+                      if (latestLocation) {
+                          latestTimestamp = new Date(latestLocation.timestamp).getTime();
+                          var lat = parseFloat(latestLocation.latitude);
+                          var lng = parseFloat(latestLocation.longitude);
+  
+                          return axios.get(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=en,zh`)
+                              .then(function(geoResponse) {
+                                  latestLocationNameEn = geoResponse.data.display_name;
+  
+                                  L.marker([lat, lng]).addTo(map)
+                                      .bindPopup('Latest Position: ' + lat + '°N, ' + lng + '°E<br>Timestamp: ' + latestLocation.timestamp + '<br>Location: ' + latestLocationNameEn)
+                                      .openPopup();
+  
+                                  map.setView([lat, lng], 20);
+                              });
+                      } else {
+                          throw new Error('No latest location data found');
+                      }
+                  });
+          }
+  
+      function fetchEncoder() {
+        axios.get('http://localhost/wheelchair_tracking/fetchlocation/wh1_get_encoder.php')
+          .then(res => {
+            const data = res.data;
+            document.getElementById('encoder').innerText = `Distance: ${data.distance} m, Speed: ${data.speed} m/s`;
+          });
+      }
+  
+      function fetchCollision() {
+        axios.get('http://localhost/wheelchair_tracking/fetchlocation/wh1_get_collision.php')
+          .then(function(response) {
+              var collisionData = response.data;
+              var collisionInfoDiv = document.getElementById('collision');
+  
+              if (collisionData) {
+                  var collisionTimestamp = new Date(collisionData.timestamp).getTime();
+                  var currentTime = Date.now();
+  
+                  if (currentTime - collisionTimestamp <= 5 * 60 * 1000) {
+                      collisionInfoDiv.style.background = '#f8d7da';
+                      collisionInfoDiv.style.border = '#f5c6cb';
+                      collisionInfoDiv.innerHTML = 'Collision detected!<br>' +
+                                                    'Collision Timestamp: ' + collisionData.timestamp;
+                  } else {
+                      collisionInfoDiv.innerHTML = 'No collision detected within the last 5 minutes.';
+                  }
+              } else {
+                  collisionInfoDiv.innerHTML = 'No collision detected.';
+              }
+          });
+      }
+  
+      function fetchFall() {
+        axios.get('http://localhost/wheelchair_tracking/fetchlocation/wh1_get_fall.php')
+          .then(function(response) {
+              var fallData = response.data;
+              var fallInfoDiv = document.getElementById('fall');
+  
+              if (fallData) {
+                  var fallTimestamp = new Date(fallData.timestamp).getTime();
+                  var currentTime = Date.now();
+  
+                  if (currentTime - fallTimestamp <= 5 * 60 * 1000) {
+                      fallInfoDiv.style.background = '#f8d7da';
+                      fallInfoDiv.style.border = '#f5c6cb';
+                      fallInfoDiv.innerHTML = 'Fall detected!<br>' +
+                                              'Fall Timestamp: ' + fallData.timestamp;
+                  } else {
+                      fallInfoDiv.innerHTML = 'No fall detected within the last 5 minutes.';
+                  }
+              } else {
+                  fallInfoDiv.innerHTML = 'No fall detected.';
+              }
+          })
+          .catch(function(error) {
+              console.error('Error fetching fall data:', error);
+              document.getElementById('fall').innerHTML = 'Error fetching fall data.';
+          });
+      }
+  
+      
+  
+      function fetchSOS() {
+          axios.get('http://localhost/wheelchair_tracking/fetchlocation/wh1_get_soslocations.php')
+              .then(function(response) {
+                  var sosLocation = response.data;
+  
+                  if (sosLocation) {
+                      sosLat = parseFloat(sosLocation.latitude);
+                      sosLng = parseFloat(sosLocation.longitude);
+                      sosTimestamp = new Date(sosLocation.timestamp).getTime();
+  
+                      axios.get(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${sosLat}&lon=${sosLng}&accept-language=en,zh`)
+                          .then(function(geoResponse) {
+                              sosLocationNameEn = geoResponse.data.display_name;
+  
+                              var currentTime = Date.now();
+                              var removeAfter = sosTimestamp + (5 * 60 * 1000);
+  
+                              if (currentTime <= removeAfter) {
+                                  if (sosMarker) {
+                                      map.removeLayer(sosMarker);
+                                  }
+  
+                                  sosMarker = L.marker([sosLat, sosLng], {
+                                      icon: L.divIcon({
+                                          className: 'sos',
+                                          html: '<div style="width: 20px; height: 20px; background: red; border-radius: 50%;"></div>'
+                                      })
+                                  }).addTo(map)
+                                  .bindPopup(`SOS Position: ${sosLat}°N, ${sosLng}°E<br>Timestamp: ${sosLocation.timestamp}<br>Location: ${sosLocationNameEn}`);
+  
+                                  setTimeout(function() {
+                                      if (sosMarker) {
+                                          map.removeLayer(sosMarker);
+                                          sosMarker = null; 
+                                      }
+                                  }, removeAfter - currentTime);
+                                  document.getElementById('sos-card').style.display = 'none'; 
+                              } else {
+                                  console.log('SOS Alert expired.');
+                                  document.getElementById('sos-card').style.display = 'none'; 
+                              }
+                          })
+                          .catch(function(geoError) {
+                              console.error('Error during reverse geocoding:', geoError);
+                          });
+                  } else {
+                      console.error('No SOS data found');
+
+                  }
+              })
+              .catch(function(error) {
+                  console.error('Error fetching SOS location from PHP script:', error);
+                  document.getElementById('sos-card').style.display = 'none'; 
+              });
+      }
+
+      document.getElementById('cancel-sos').addEventListener('click', function() {
+          if (sosMarker) {
+              var previousSOSAlertsDiv = document.getElementById('previous-sos-alerts');
+              previousSOSAlertsDiv.innerHTML += `Previous SOS Alert:<br>
+                  Position: ${sosLat}°N, ${sosLng}°E<br>
+                  Timestamp: ${new Date(sosTimestamp).toLocaleString()}<br>
+                  Location: ${sosLocationNameEn}<br><br>`;
+              previousSOSAlertsDiv.style.display = 'block';
+              document.getElementById('sos-card').style.display = 'block';
+  
+              map.removeLayer(sosMarker);
+              sosMarker = null; 
+          } else {
+              console.log('No SOS marker to remove.');
+          }
+      });
+  
+  
+      window.onload = function() {
+              setInterval(function() {
+                  window.location.reload();
+              }, 60000); 
+          };
+  
+      fetchLatestLocation();
+      fetchEncoder();
+      fetchSlopeData();
+      fetchCollision();
+      fetchFall();
+      fetchSOS();
+      fetchPreviousGPS();
+    </script>
+    </div> 
+  </div> 
+</body>
+</html>

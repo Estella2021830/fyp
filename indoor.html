@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Indoor Triangulation Map</title>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+
+  <style>
+    .legend {
+  background: white;
+  padding: 10px;
+  border-radius: 6px;
+  box-shadow: 0 0 10px rgba(0,0,0,0.3);
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1000;
+  font-size: 14px;
+}
+
+.legend div {
+  display: flex;
+  align-items: center;
+  margin-bottom: 5px;
+}
+
+.legend-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  margin-right: 8px;
+}
+
+.legend-dot.blue {
+  background-color: #007bff;
+}
+
+.legend-dot.grey {
+  background-color: grey;
+}
+
+.legend-dot.red {
+  background-color: red;
+}
+
+    body, html {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    .layout {
+      display: flex;
+      height: 100vh;
+    }
+
+    .sidebar {
+      width: 220px;
+      background-color: #fff;
+      border-right: 1px solid #ddd;
+      padding: 20px 15px;
+      box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+    }
+
+    .sidebar h2 {
+      font-size: 30px;
+      font-weight: bold;
+      margin: 0 0 30px;
+    }
+
+    .sidebar h3 {
+      font-size: 25px;
+      font-weight: bold;
+      margin: 25px 0 8px;
+    }
+
+    .sidebar a {
+      display: block;
+      font-size: 25px;
+      color: #007BFF;
+      text-decoration: none;
+      padding: 5px 0;
+      transition: color 0.2s ease-in-out;
+    }
+
+    .sidebar a:hover {
+      color: #0056b3;
+    }
+
+    .content {
+      flex: 1;
+      overflow: auto;
+      padding: 25px;
+      background: linear-gradient(to bottom right, #e0e0e0, #cfcfcf);
+    }
+
+    h1 {
+      text-align: center;
+      font-size: 25px;
+      margin-top: 10px;
+      color: #333;
+    }
+
+    #map {
+      height: 70vh;
+      width: 100%;
+      border: 2px solid #555555;
+      box-shadow: 0 0 12px rgba(0, 0, 0, 0.15);
+      border-radius: 10px;
+    }
+
+    .unit-label {
+      position: absolute;
+      bottom: 60px;
+      left: 5px;
+      background: rgba(255, 255, 255, 0.9);
+      padding: 6px 12px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      font-size: 13px;
+      color: #333;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+    }
+
+    .map-tooltip {
+      background: rgba(255, 255, 255, 0.95);
+      border: 1px solid #aaa;
+      padding: 5px 10px;
+      border-radius: 6px;
+      font-size: 13px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+      color: #222;
+    }
+
+    .map-tooltip-plain {
+      background: none;
+      border: none;
+      box-shadow: none;
+      font-weight: bold;
+      font-size: 14px;
+      color: #111;
+      text-shadow: 0 0 4px white;
+      pointer-events: none;
+    }
+
+    .container {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 20px;
+      padding: 20px;
+    }
+
+    .card {
+      background: white;
+      padding: 15px;
+      border-radius: 10px;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    .card h2 {
+      margin-top: 0;
+      font-size: 18px;
+    }
+
+    .value {
+      font-weight: bold;
+      font-size: 16px;
+      color: #333;
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <div class="sidebar">
+      <h2>Wheelchair Locations</h2>
+
+      <h3>Wheelchair 1</h3>
+      <a href="/indoor">Indoor</a>
+      <a href="/outdoor">Outdoor</a>
+
+      <h3>Wheelchair 2</h3>
+      <a href="/indoor_location2">Indoor</a>
+      <a href="/outdoor_location2">Outdoor</a>
+    </div>
+
+    <div class="content">
+      <h1>Indoor Triangulation Map</h1>
+      <div class="legend">
+        <div><div class="legend-dot blue"></div>Latest Location</div>
+        <div><div class="legend-dot grey"></div>Previous Location</div>
+        <div>
+          <div class="legend-dot red"></div><strong>SOS Alert Location</strong>
+          <button id="cancel-sos" style="margin-left: 10px;">Acknowledge</button>
+        </div>
+      </div>
+      
+      <div id="map"></div>
+      <div class="unit-label">Unit = Meter</div>
+
+
+      <div class="container">
+        <div class="card"><h2>Fall Detection</h2><p class="value" id="fall">Loading...</p></div>
+        <div class="card"><h2>Slope</h2><p class="value" id="slope">Loading...</p></div>
+        <div class="card"><h2>Collision</h2><p class="value" id="collision">Loading...</p></div>
+        <div class="card"><h2>Encoder</h2><p class="value" id="encoder">Loading...</p></div>
+        <div class="card" id="sos-card" style="display: none;"><h2>Previous SOS</h2><p class="value" id="sos-info"></p></div>
+      
+
+      <script>
+        var map = L.map('map', {
+          crs: L.CRS.Simple,
+          minZoom: -1
+        });
+    
+        L.control.scale({ metric: true, imperial: false }).addTo(map);
+    
+        var mapWidthMeters = 4.15;
+        var mapHeightMeters = 5.35;
+        var bounds = [[0, 0], [mapHeightMeters, mapWidthMeters]];
+        L.rectangle(bounds, {
+          color: "#666",
+          weight: 2,
+          dashArray: '4',
+          opacity: 0.8
+        }).addTo(map);
+        map.fitBounds(bounds);
+    
+        function transformCoordinates(x, y) {
+          return [y, x];
+        }
+    
+        var beacons = {
+          "beacon1": transformCoordinates(0, 0),
+          "beacon2": transformCoordinates(4.15, 0),
+          "beacon3": transformCoordinates(0, 5.35),
+          "beacon4": transformCoordinates(4.15, 5.35)
+        };
+    
+        Object.keys(beacons).forEach(beacon => {
+          L.circleMarker(beacons[beacon], {
+            color: "blue",
+            radius: 6,
+            fillOpacity: 1
+          }).addTo(map).bindPopup(beacon);
+        });
+    
+        var debugCoordinates = [
+          [0, 0], [0, 5.35], [4.15, 5.35], [4.15, 0]
+        ];
+    
+        debugCoordinates.forEach(coord => {
+          L.circleMarker(transformCoordinates(coord[0], coord[1]), {
+            color: "red",
+            radius: 4,
+            fillOpacity: 1
+          }).addTo(map).bindPopup(`Debug: (${coord[0]}, ${coord[1]})`);
+        });
+    
+        var marker = L.circleMarker([0, 0], {
+          radius: 30,
+          color: 'green',
+          fillColor: 'green',
+          fillOpacity: 0,
+          opacity: 0
+        }).addTo(map);
+    
+        marker.bindTooltip("Wheelchair Model 1 (X: 0.00, Y: 0.00)", {
+          permanent: true,
+          direction: 'top',
+          className: 'map-tooltip-plain',
+          offset: [0, -35]
+        }).openTooltip();
+    
+        const wheelchairTooltip = marker.getTooltip();
+        var latestLocation_x, latestLocation_y;
+        var sosmarker = null; 
+        var soswheelchairTooltip; 
+        var sosInterval, sosTimestamp; 
+        var latestLocation = {}; 
+        
+        function fetchTriangulationData() {
+          fetch('/latest_position')
+            .then(response => response.json())
+            .then(data => {
+              if (data && data.x !== undefined && data.y !== undefined) {
+                let transformedCoords = transformCoordinates(data.x, data.y);
+                marker.setLatLng(transformedCoords);
+                marker.setStyle({ fillOpacity: 1, opacity: 1 });
+                wheelchairTooltip.setContent(`Wheelchair Model 1 (X: ${data.x.toFixed(2)}, Y: ${data.y.toFixed(2)})`);
+    
+                latestLocation_x = data.x.toFixed(2);
+                latestLocation_y = data.y.toFixed(2);
+                console.log(`Latest X: ${latestLocation_x}, Latest Y: ${latestLocation_y}`);
+    
+                marker.openTooltip();
+              } else {
+                marker.setStyle({ fillOpacity: 0, opacity: 0 });
+                wheelchairTooltip.setContent('');
+                marker.closeTooltip();
+              }
+            })
+            .catch(err => {
+              console.error('Error fetching triangulation data:', err);
+              marker.setStyle({ fillOpacity: 0, opacity: 0 });
+              wheelchairTooltip.setContent('');
+              marker.closeTooltip();
+            });
+        }
+        
+    
+        function fetchSlopeData() {
+          axios.get('http://localhost/wheelchair_tracking/fetchlocation/wh1_get_slope.php')
+                .then(function(response) {
+                    var slopeData = response.data;
+                    var slopeInfoDiv = document.getElementById('slope');
+    
+                    if (slopeData) {
+                        var slopeTimestamp = new Date(slopeData.timestamp).getTime();
+                        var currentTime = Date.now();
+    
+                        if (currentTime - slopeTimestamp <= 60 * 1000) {
+                            slopeInfoDiv.innerHTML = 'Slope detection state: ' + slopeData.slope_detection;
+                        } else {
+                            slopeInfoDiv.innerHTML = 'No slope detection movement within the last minute.';
+                        }
+                    } else {
+                        slopeInfoDiv.innerHTML = 'No slope detection data available.';
+                    }
+                })
+                .catch(function(error) {
+                    console.error('Error fetching slope detection data:', error);
+                    document.getElementById('slope').innerHTML = 'Error fetching slope detection data.';
+                });
+        }
+    
+        function fetchEncoder() {
+          axios.get('http://localhost/wheelchair_tracking/fetchlocation/wh1_get_encoder.php')
+            .then(res => {
+              const data = res.data;
+              document.getElementById('encoder').innerText = `Distance: ${data.distance} m, Speed: ${data.speed} m/s`;
+            });
+        }
+    
+        function fetchCollision() {
+          axios.get('http://localhost/wheelchair_tracking/fetchlocation/wh1_get_collision.php')
+            .then(function(response) {
+                var collisionData = response.data;
+                var collisionInfoDiv = document.getElementById('collision');
+    
+                if (collisionData) {
+                    var collisionTimestamp = new Date(collisionData.timestamp).getTime();
+                    var currentTime = Date.now();
+    
+                    if (currentTime - collisionTimestamp <= 5 * 60 * 1000) {
+                        collisionInfoDiv.style.background = '#f8d7da';
+                        collisionInfoDiv.style.border = '#f5c6cb';
+                        collisionInfoDiv.innerHTML = 'Collision detected!<br>' +
+                                                      'Collision Timestamp: ' + collisionData.timestamp;
+                    } else {
+                        collisionInfoDiv.innerHTML = 'No collision detected within the last 5 minutes.';
+                        collisionInfoDiv.style.background = 'white';
+                        collisionInfoDiv.style.border = 'white';
+                        
+                    }
+                } else {
+                    collisionInfoDiv.innerHTML = 'No collision detected.';
+                }
+            });
+        }
+    
+        function fetchFall() {
+          axios.get('http://localhost/wheelchair_tracking/fetchlocation/wh1_get_fall.php')
+            .then(function(response) {
+                var fallData = response.data;
+                var fallInfoDiv = document.getElementById('fall');
+    
+                if (fallData) {
+                    var fallTimestamp = new Date(fallData.timestamp).getTime();
+                    var currentTime = Date.now();
+    
+                    if (currentTime - fallTimestamp <= 5 * 60 * 1000) {
+                        fallInfoDiv.style.background = '#f8d7da';
+                        fallInfoDiv.style.border = '#f5c6cb';
+                        fallInfoDiv.innerHTML = 'Fall detected!<br>' +
+                                                'Fall Timestamp: ' + fallData.timestamp;
+                    } else {
+                        fallInfoDiv.innerHTML = 'No fall detected within the last 5 minutes.';
+                    }
+                } else {
+                    fallInfoDiv.innerHTML = 'No fall detected.';
+                }
+            })
+            .catch(function(error) {
+                console.error('Error fetching fall data:', error);
+                document.getElementById('fall').innerHTML = 'Error fetching fall data.';
+            });
+        }
+
+        
+        function fetchSOSLocation() {
+            axios.get('http://localhost/wheelchair_tracking/fetchlocation/wh1_get_soslocations.php')
+                .then(function(response) {
+                    var sosLocation = response.data;
+                    var sosCoordinates = latestLocation.wheelchair; 
+                    if (sosLocation) {
+                        sosTimestamp = new Date(sosLocation.timestamp).getTime();
+
+                        if (latestLocation_x !== null && latestLocation_y !== null) {
+                            console.log(`Latest X: ${latestLocation_x}, Latest Y: ${latestLocation_y}`);
+                            sosInterval = setInterval(function() {
+                                const currentTime = Date.now();
+                                console.log('Current Time:', new Date(currentTime).toLocaleString());
+                                console.log('SOS Timestamp:', new Date(sosTimestamp).toLocaleString());
+
+                                if (currentTime - sosTimestamp > 5 * 60 * 1000) {
+                                    if (sosmarker) {
+                                        sosmarker.setStyle({ fillOpacity: 0, opacity: 0 });
+                                        sosmarker.closeTooltip();
+                                        sosmarker = null; 
+                                        soswheelchairTooltip = null; 
+                                    }
+                                    clearInterval(sosInterval);
+                                    sosInterval = null;
+                                } else {
+                                    if (!sosmarker) {
+                                        let transformedCoords = transformCoordinates(latestLocation_x, latestLocation_y);
+                                        sosmarker = L.circleMarker(transformedCoords, {
+                                            color: 'red',
+                                            radius: 10,
+                                            fillOpacity: 1
+                                        }).addTo(map);
+                                        soswheelchairTooltip = sosmarker.bindTooltip(`SOS Location: X: ${latestLocation_x}, Y: ${latestLocation_y}`);
+
+                                        sosmarker.openTooltip();
+                                    }
+                                }
+                            }, 30000);  
+                            document.getElementById('sos-card').style.display = 'none'; 
+                        }
+                    } else {
+                        console.error('No SOS data found');
+                        if (sosmarker) {
+                            sosmarker.setStyle({ fillOpacity: 0, opacity: 0 });
+                            sosmarker.closeTooltip();
+                            sosmarker = null; 
+                            soswheelchairTooltip = null;
+                        }
+                        document.getElementById('sos-card').style.display = 'none';
+                    }
+                })
+                .catch(function(error) {
+                    console.error('Error fetching SOS location from PHP script:', error);
+                    document.getElementById('sos-card').style.display = 'none';
+                });
+        }
+
+        function handleCancelSOS() {
+          if (sosmarker) {
+            sosmarker.setStyle({ fillOpacity: 0, opacity: 0 });
+            sosmarker.closeTooltip();
+            sosmarker = null; 
+            if (soswheelchairTooltip) {
+                soswheelchairTooltip = null
+            }
+            console.log('SOS Timestamp:', new Date(sosTimestamp).toLocaleString());
+            var sosInfoDiv = document.getElementById('sos-info');
+                sosInfoDiv.innerHTML = 'Previous SOS Alert:<br>' +
+                    'Timestamp: ' + new Date(sosTimestamp).toLocaleString()+ '<br>' +
+                    'Location: X: ' + (latestLocation_x || 'N/A') + 
+                    ', Y: ' + (latestLocation_y || 'N/A') + '<br>'; 
+                sosInfoDiv.style.display = 'block';
+                document.getElementById('sos-card').style.display = 'block';
+
+              
+                setTimeout(function() {
+                    document.getElementById('sos-card').style.display = 'none'; 
+                    sosInfoDiv.innerHTML = ''; 
+                }, 5 * 60 * 1000); 
+                
+          }
+        }
+
+        document.getElementById('cancel-sos').addEventListener('click', handleCancelSOS);
+
+        
+        setInterval(() => {
+            fetchTriangulationData();
+            fetchEncoder();
+            fetchSlopeData();
+            fetchCollision();
+            fetchFall();
+        }, 5000);
+    
+        setInterval(() => {
+            fetchSOSLocation();
+        }, 30000);
+    
+      
+        L.tooltip({
+          permanent: true,
+          direction: 'top',
+          offset: [0, 0],
+          className: 'map-tooltip'
+        }).setLatLng(transformCoordinates(mapWidthMeters / 2, 5.35))
+          .setContent('Width: 4.15 m')
+          .addTo(map);
+    
+        L.tooltip({
+          permanent: true,
+          direction: 'right',
+          offset: [0, 0],
+          className: 'map-tooltip'
+        }).setLatLng(transformCoordinates(4.15, mapHeightMeters / 2))
+          .setContent('Height: 5.35 m')
+          .addTo(map);
+
+        fetchEncoder();
+        fetchSlopeData();
+        fetchCollision();
+        fetchFall();
+        fetchSOSLocation();
+      </script>
+    </div> 
+  </div> 
+</body>
+</html>

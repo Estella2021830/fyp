@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wheelchair Tracking System</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: linear-gradient(to right, #f8f9fa, #e0e0e0);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+    }
+    h1 {
+      color: #333;
+    }
+    .button-container {
+      margin-top: 20px;
+      display: flex;
+      gap: 20px;
+    }
+    .tracking-button {
+      padding: 15px 30px;
+      font-size: 16px;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      background-color: #4CAF50;
+      color: white;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      transition: background-color 0.3s ease;
+    }
+    .tracking-button:hover {
+      background-color: #45a049;
+    }
+  </style>
+</head>
+<body>
+  <h1>Wheelchair Tracking System</h1>
+  <div class="button-container">
+    <button class="tracking-button" onclick="location.href='/indoor'">Indoor Part</button>
+    <button class="tracking-button" onclick="location.href='/outdoor'">Outdoor Part</button>
+  </div>
+</body>
+</html>
