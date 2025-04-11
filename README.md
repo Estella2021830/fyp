@@ -1,2 +1,3 @@
 In this project, wheelchair localization and a wheelchair usage monitoring system are aimed to be obtained. For wheelchair localization, there are 2 esp32 subscribers responsible for indoor and outdoor localization. Meanwhile, there are 2 esp32 subscribers for the IMU sensor and encoder. The primary esp32 is responsible for deciding to request which type of data and send it to the corresponding PHP files. The PHP files connect to the database and insert data to it. Then, the website will fetch data from database and demonstrate the data.
+
 ![image](https://github.com/user-attachments/assets/7da17d34-7ab5-469c-9ace-0cacf5f2706a)
